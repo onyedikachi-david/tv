@@ -62,14 +62,14 @@ defmodule Algora.Accounts do
   ## User registration
 
   @doc """
-  Registers a user from their GitHub information.
+  Registers a user from their OAuth provider information.
   """
-  def register_github_user(primary_email, info, emails, token) do
-    if user = get_user_by_provider_email(:github, primary_email) do
-      update_github_token(user, token)
+  def register_oauth_user(provider, primary_email, info, emails, token) do
+    if user = get_user_by_provider_email(provider, primary_email) do
+      update_oauth_token(user, token, provider)
     else
       info
-      |> User.github_registration_changeset(primary_email, emails, token)
+      |> User.oauth_registration_changeset(primary_email, emails, token, provider)
       |> Repo.insert()
     end
   end
@@ -96,7 +96,7 @@ defmodule Algora.Accounts do
     end
   end
 
-  def get_user_by_provider_email(provider, email) when provider in [:github] do
+  def get_user_by_provider_email(provider, email) do
     query =
       from(u in User,
         join: i in assoc(u, :identities),
@@ -108,7 +108,7 @@ defmodule Algora.Accounts do
     Repo.one(query)
   end
 
-  def get_user_by_provider_id(provider, id) when provider in [:github] do
+  def get_user_by_provider_id(provider, id) do
     query =
       from(u in User,
         join: i in assoc(u, :identities),
@@ -122,9 +122,9 @@ defmodule Algora.Accounts do
     User.settings_changeset(user, attrs)
   end
 
-  defp update_github_token(%User{} = user, new_token) do
+  defp update_oauth_token(%User{} = user, new_token, provider) do
     identity =
-      Repo.one!(from(i in Identity, where: i.user_id == ^user.id and i.provider == "github"))
+      Repo.one!(from(i in Identity, where: i.user_id == ^user.id and i.provider == ^to_string(provider)))
 
     {:ok, _} =
       identity
@@ -268,6 +268,60 @@ defmodule Algora.Accounts do
     case get_entity_by(platform: platform, platform_id: platform_id) do
       nil -> create_entity!(attrs)
       entity -> entity
+    end
+  end
+
+  def get_or_create_user(attrs) do
+    case get_user_by_provider_and_uid(attrs.provider, attrs.uid) do
+      nil -> create_user(attrs)
+      user -> {:ok, user}
+    end
+  end
+
+  defp get_user_by_provider_and_uid(provider, uid) do
+    Repo.get_by(User, provider: provider, uid: uid)
+  end
+
+  defp create_user(attrs) do
+    %User{}
+    |> User.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def get_or_create_user_with_identity(user_params, identity_params, provider) do
+    Repo.transaction(fn ->
+      case get_user_by_provider_id(provider, identity_params.provider_id) do
+        nil ->
+          with {:ok, user} <- create_user(user_params),
+               {:ok, _identity} <- create_identity(user, identity_params, provider) do
+            user
+          else
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+
+        user ->
+          with {:ok, _identity} <- update_or_create_identity(user, identity_params, provider) do
+            user
+          else
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
+    end)
+  end
+
+  defp create_identity(user, params, provider) do
+    %Identity{}
+    |> Identity.oauth_changeset(Map.put(params, :user_id, user.id), provider)
+    |> Repo.insert()
+  end
+
+  defp update_or_create_identity(user, params, provider) do
+    case Repo.get_by(Identity, user_id: user.id, provider: to_string(provider)) do
+      nil -> create_identity(user, params, provider)
+      identity ->
+        identity
+        |> Identity.oauth_changeset(params, provider)
+        |> Repo.update()
     end
   end
 end

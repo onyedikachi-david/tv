@@ -19,6 +19,10 @@ defmodule Algora.Accounts.User do
     field :bounties_count, :integer
     field :solving_challenge, :boolean, default: false
 
+    # Fields for Ueberauth
+    field :provider, :string
+    field :uid, :string
+
     embeds_many :tech, Tech do
       field :name, :string
       field :pct, :float
@@ -49,13 +53,13 @@ defmodule Algora.Accounts.User do
   end
 
   @doc """
-  A user changeset for github registration.
+  A user changeset for OAuth registration.
   """
-  def github_registration_changeset(info, primary_email, emails, token) do
+  def oauth_registration_changeset(info, primary_email, emails, token, provider) do
     %{"login" => handle, "avatar_url" => avatar_url, "html_url" => external_homepage_url} = info
 
     identity_changeset =
-      Identity.github_registration_changeset(info, primary_email, emails, token)
+      Identity.oauth_registration_changeset(info, primary_email, emails, token, provider)
 
     if identity_changeset.valid? do
       params = %{
@@ -64,12 +68,14 @@ defmodule Algora.Accounts.User do
         "name" => get_change(identity_changeset, :provider_name),
         "avatar_url" => avatar_url,
         "external_homepage_url" => external_homepage_url,
-        "visibility" => get_visibility(info)
+        "visibility" => get_visibility(info),
+        "provider" => to_string(provider),
+        "uid" => to_string(info["id"])
       }
 
       %User{}
-      |> cast(params, [:email, :name, :handle, :avatar_url, :external_homepage_url, :visibility])
-      |> validate_required([:email, :name, :handle, :visibility])
+      |> cast(params, [:email, :name, :handle, :avatar_url, :external_homepage_url, :visibility, :provider, :uid])
+      |> validate_required([:email, :name, :handle, :visibility, :provider, :uid])
       |> validate_handle()
       |> validate_email()
       |> put_assoc(:identities, [identity_changeset])

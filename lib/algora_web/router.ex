@@ -1,5 +1,6 @@
 defmodule AlgoraWeb.Router do
   use AlgoraWeb, :router
+  use Ueberauth
 
   import AlgoraWeb.UserAuth, only: [fetch_current_user: 2]
 
@@ -144,5 +145,14 @@ defmodule AlgoraWeb.Router do
       get "/gh/:user_id/thumbnail", GithubController, :get_thumbnail
       get "/gh/:user_id/channel", GithubController, :get_channel
     end
+  end
+
+  scope "/auth", AlgoraWeb do
+    pipe_through :browser
+
+    get "/:provider", AuthController, :request
+    get "/:provider/callback", AuthController, :callback
+    post "/:provider/callback", AuthController, :callback
+    delete "/logout", AuthController, :delete
   end
 end

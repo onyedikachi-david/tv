@@ -84,7 +84,11 @@ defmodule Algora.MixProject do
       {:ex_aws_s3, "~> 2.3"},
       {:ex_doc, "~> 0.29.0"},
       {:hackney, ">= 1.20.1"},
-      {:sweet_xml, ">= 0.0.0", optional: true}
+      {:sweet_xml, ">= 0.0.0", optional: true},
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_google, "~> 0.10"},
+      {:ueberauth_twitch, "~> 0.1"},
+      {:ueberauth_twitter, "~> 0.4"}
     ]
   end
 

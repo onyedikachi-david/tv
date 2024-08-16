@@ -4,9 +4,7 @@ defmodule Algora.Accounts.Identity do
 
   alias Algora.Accounts.{Identity, User}
 
-  # providers
-  @github "github"
-  @restream "restream"
+  @providers [:github, :google, :twitch, :twitter]
 
   @derive {Inspect, except: [:provider_token, :provider_refresh_token, :provider_meta]}
   schema "identities" do
@@ -15,9 +13,10 @@ defmodule Algora.Accounts.Identity do
     field :provider_refresh_token, :string
     field :provider_email, :string
     field :provider_login, :string
-    field :provider_name, :string, virtual: true
+    field :provider_name, :string
     field :provider_id, :string
     field :provider_meta, :map
+    field :token_expiry, :integer
 
     belongs_to :user, User
 
@@ -25,9 +24,39 @@ defmodule Algora.Accounts.Identity do
   end
 
   @doc """
-  A user changeset for github registration.
+  A changeset for OAuth registration or update.
   """
-  def github_registration_changeset(info, primary_email, emails, token) do
+  def oauth_changeset(identity, attrs, provider) when provider in @providers do
+    identity
+    |> cast(attrs, [
+      :provider_token,
+      :provider_refresh_token,
+      :provider_email,
+      :provider_login,
+      :provider_name,
+      :provider_id,
+      :token_expiry,
+      :user_id
+    ])
+    |> put_change(:provider, to_string(provider))
+    |> put_change(:provider_meta, Map.get(attrs, :provider_meta, %{}))
+    |> validate_required([
+      :provider,
+      :provider_token,
+      :provider_email,
+      :provider_name,
+      :provider_id,
+      :user_id
+    ])
+    |> validate_length(:provider_meta, max: 10_000)
+    |> unique_constraint([:provider, :provider_id])
+    |> unique_constraint([:user_id, :provider])
+  end
+
+  @doc """
+  A user changeset for OAuth registration.
+  """
+  def oauth_registration_changeset(info, primary_email, emails, token, provider) do
     params = %{
       "provider_token" => token,
       "provider_id" => to_string(info["id"]),
@@ -36,7 +65,7 @@ defmodule Algora.Accounts.Identity do
       "provider_email" => primary_email
     }
 
-    %Identity{provider: @github, provider_meta: %{"user" => info, "emails" => emails}}
+    %Identity{provider: to_string(provider), provider_meta: %{"user" => info, "emails" => emails}}
     |> cast(params, [
       :provider_token,
       :provider_email,
